@@ -17,7 +17,7 @@ public class Field {
         for (int i = 0; i < SIZE; ++i)
             for (int j = 0; j < SIZE; ++j) {
                 cells[i][j] = new Cell();
-                cells[i][j].setType(field.getCells()[i][j].getType());
+                cells[i][j].setType(field.getCell(i, j));
             }
     }
 
@@ -25,10 +25,6 @@ public class Field {
         for (int i = 0; i < SIZE; ++i)
             for (int j = 0; j < SIZE; ++j)
                 setCell(i, j, CellType.EMPTY);
-    }
-
-    public Cell[][] getCells() {
-        return cells;
     }
 
     public boolean isCellSet(int row, int col) {

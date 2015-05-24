@@ -20,6 +20,7 @@ public class View {
     private Frame frame;
     private CellButton[][] leftButtons;
     private CellButton[][] rightButtons;
+    private TextField textField;
     private final int WIDTH = 800;
     private final int HEIGHT = 600;
 
@@ -52,6 +53,17 @@ public class View {
         menuPanel.add(startButton);
         menuPanel.add(connectButton);
         menuPanel.add(quitButton);
+
+        Panel connectMenuPanel = new Panel(new FlowLayout());
+
+        connectMenuPanel.setSize(WIDTH, HEIGHT);
+        textField = new TextField("Enter HOST:PORT", 21);
+        Button doConnectButton = new Button("Connect");
+        doConnectButton.setActionCommand("DO_CONNECT");
+        doConnectButton.addActionListener(new ButtonClickListener());
+
+        connectMenuPanel.add(textField);
+        connectMenuPanel.add(doConnectButton);
 
         Panel gamePanel = new Panel(new GridLayout(1, 2));
         gamePanel.setSize(WIDTH, HEIGHT);
@@ -87,6 +99,7 @@ public class View {
         gamePanel.add(rightPanel);
 
         frame.add(menuPanel);
+        frame.add(connectMenuPanel);
         frame.add(gamePanel);
 
         frame.setVisible(true);
@@ -109,6 +122,8 @@ public class View {
                 controller.handleHitEvent(RIGHT, btn.getRow(), btn.getCol());
             } else if (cmd.equals("READY")) {
                 controller.handleReadyEvent();
+            } else if (cmd.equals("DO_CONNECT")) {
+                controller.handleDoConnectEvent(textField.getText());
             }
         }
     }
@@ -123,6 +138,8 @@ public class View {
                     layout.first(frame);
                     break;
                 case CONNECT:
+                    layout.next(frame);
+                    break;
                 case PREPARE:
                 case GAME:
                     Field[] fields = model.getFields();
@@ -130,10 +147,9 @@ public class View {
                     for (int k = 0; k < fields.length; ++k)
                         for (int i = 0; i < SIZE; ++i)
                             for (int j = 0; j < SIZE; ++j) {
-                                Cell[][] cells = fields[k].getCells();
                                 Color color = new Color(120, 120, 120);
 
-                                switch (cells[i][j].getType()) {
+                                switch (fields[k].getCell(i, j)) {
                                     case SHIP:
                                         color = Color.blue;
                                         break;
@@ -153,7 +169,7 @@ public class View {
 
                     layout.last(frame);
                     break;
-                case WON:
+                case VICTORY:
                     break;
             }
         }

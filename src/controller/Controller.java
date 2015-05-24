@@ -23,6 +23,10 @@ public class Controller {
         model.update(State.GAME);
     }
 
+    public void handleDoConnectEvent(String address) {
+        System.out.println(address);
+    }
+
     public void handleHitEvent(int side, int row, int col) {
         model.tryHit(side, row, col);
     }
