@@ -1,28 +1,38 @@
 package model;
 import java.io.*;
 import java.net.*;
+import java.nio.charset.*;
+import java.nio.file.*;
+import java.util.List;
+import java.util.ArrayList;
 
 import model.CellType;
 import model.Field;
+import model.IpAddress;
 import model.Message;
-import model.State;
+import model.GameState;
 import model.TcpThread;
 import static model.Constants.*;
 
 public class Model {
 
-    private State state;
+    private GameState state;
     private Field[] fields;
     private boolean isReady;
     private boolean isUpdated;
+    private boolean arrangementError;
+    private boolean connectionError;
     private int whoPlay;
+    private int whoWon;
 
     private TcpThread thread;
+    private volatile IpAddress oppAddress;
+    private volatile boolean oppReady;
     private volatile Message request;
     private volatile Message response;
 
     public Model() {
-        state = State.MENU;
+        state = GameState.MENU;
 
         fields = new Field[2];
         fields[LEFT] = new Field();
@@ -30,13 +40,18 @@ public class Model {
 
         isReady = false;
         isUpdated = true;
+        arrangementError = false;
+        connectionError = false;
         whoPlay = LEFT;
+        whoWon = NONE;
 
+        oppAddress = new IpAddress();
+        oppReady = false;
         request = new Message();
         response = new Message();
     }
 
-    public State getState() {
+    public GameState getGameState() {
         return state;
     }
 
@@ -60,6 +75,30 @@ public class Model {
         this.isUpdated = isUpdated;
     }
 
+    public boolean getArrangementError() {
+        return arrangementError;
+    }
+
+    public boolean getConnectionError() {
+        return connectionError;
+    }
+
+    public int getWhoPlay() {
+        return whoPlay;
+    }
+
+    public int getWhoWon() {
+        return whoWon;
+    }
+
+    public void setOppAddress(IpAddress oppAddress) {
+        this.oppAddress = oppAddress;
+    }
+
+    public void setOppReady(boolean oppReady) {
+        this.oppReady = oppReady;
+    }
+
     public void setRequest(Message request) {
         this.request = request;
     }
@@ -68,33 +107,64 @@ public class Model {
         this.response = response;
     }
 
+    public void waitOppReady() {
+        if (!checkIsAllowed()) {
+            resetPrepare();
+            return;
+        }
+
+        sendRequest(0, 0);
+        if (oppReady)
+            update(GameState.GAME);
+        else
+            state = GameState.WAIT_READY;
+
+        isUpdated = true;
+    }
+
+    public void doConnect(String address) {
+        try {
+            oppAddress = new IpAddress(address);
+        } catch (Exception ex) {
+            return;
+        }
+
+        sendRequest(SECOND_PORT, 0);
+        state = GameState.PREPARE;
+        isUpdated = true;
+    }
+
     public void tryHit(int side, int row, int col) {
+        if (whoWon != NONE || state == GameState.WAIT || state == GameState.WAIT_READY)
+            return;
+
         if (isReady && side == RIGHT && whoPlay == LEFT &&
             !fields[side].isCellSet(row, col)) {
             sendRequest(row, col);
-        } else if (!isReady && side == LEFT && !fields[side].isCellSet(row, col)) {
-            fields[side].setCell(row, col, CellType.SHIP);
+        } else if (!isReady && side == LEFT) {
+            if (fields[side].isCellSet(row, col))
+                fields[side].setCell(row, col, CellType.EMPTY);
+            else
+                fields[side].setCell(row, col, CellType.SHIP);
             isUpdated = true;
         }
     }
 
-    public void update(State state) {
+    public void update(GameState state) {
         this.state = state;
 
         switch (state) {
+            case WAIT:
+                thread = new TcpThread(this, FIRST_PORT);
+                thread.start();
+                break;
             case CONNECT:
                 whoPlay = RIGHT;
-                thread = new TcpThread(this, DEFAULT_PORT+1);
+                thread = new TcpThread(this, SECOND_PORT);
+                thread.start();
                 break;
             case GAME:
-                if (!checkIsAllowed()) {
-                    resetPrepare();
-                    break;
-                }
                 isReady = true;
-                if (thread == null)
-                    thread = new TcpThread(this, DEFAULT_PORT);
-                thread.start();
                 break;
         }
 
@@ -102,6 +172,16 @@ public class Model {
     }
 
     public void update() {
+        if (state == GameState.WAIT)
+            if (!oppAddress.isEmpty()) {
+                state = GameState.PREPARE;
+                isUpdated = true;
+            }
+
+        if (state == GameState.WAIT_READY)
+            if (oppReady)
+                update(GameState.GAME);
+
         if (!request.isEmpty()) {
             int[] data = request.getData();
             int row = data[0];
@@ -125,12 +205,58 @@ public class Model {
         }
     }
 
+    public void loadArrangement(String path) {
+        List<String> lines = new ArrayList<String>();
+
+        try {
+            lines = Files.readAllLines(Paths.get(path),
+                                       StandardCharsets.UTF_8);
+        } catch (IOException ex) {
+            ex.printStackTrace();
+        }
+
+        int i = 0;
+        for (String s : lines) {
+            for (int j = 0; j < s.length(); ++j) {
+                if (s.charAt(j) == '1')
+                    fields[LEFT].setCell(i, j, CellType.SHIP);
+                else
+                    fields[LEFT].setCell(i, j, CellType.EMPTY);
+            }
+            i++;
+        }
+
+        isUpdated = true;
+    }
+
+    public void saveArrangement(String path) {
+        List<String> lines = new ArrayList<String>();
+        String s;
+
+        for (int i = 0; i < SIZE; ++i) {
+            s = "";
+            for (int j = 0; j < SIZE; ++j) {
+                if (fields[LEFT].getCell(i, j) == CellType.SHIP)
+                    s += "1";
+                else
+                    s += "0";
+            }
+            lines.add(s);
+        }
+
+        try {
+            Files.write(Paths.get(path), lines, StandardCharsets.UTF_8);
+        } catch (IOException ex) {
+            ex.printStackTrace();
+        }
+    }
+
     private void changeWhoPlay() {
         whoPlay ^= 1;
     }
 
     private void setDeadShip(int row, int col) {
-        fields[RIGHT].setCell(row, col, CellType.SHIP);
+        fields[RIGHT].setCell(row, col, CellType.DEAD);
         boolean up = true;
         boolean down = true;
         boolean left = true;
@@ -156,12 +282,17 @@ public class Model {
     }
 
     private void applyHit(int side, int row, int col, CellType type) {
-        if (type != CellType.SHIP) {
+        if (type != CellType.DEAD && type != CellType.DEAD_WON) {
             fields[side].setCell(row, col, type);
+            if (type == CellType.MISS)
+                changeWhoPlay();
         } else {
             setDeadShip(row, col);
+            if (type == CellType.DEAD_WON) {
+                whoWon = LEFT;
+                state = GameState.VICTORY;
+            }
         }
-        changeWhoPlay();
     }
 
     private boolean checkDeadShip(int row, int col, Field field) {
@@ -200,8 +331,18 @@ public class Model {
         return true;
     }
 
+    private boolean checkVictory() {
+        for (int i = 0; i < SIZE; ++i)
+            for (int j = 0; j < SIZE; ++j)
+                if (fields[LEFT].getCell(i, j) == CellType.SHIP)
+                    return false;
+        return true;
+    }
+
     private CellType checkHit(int row, int col) {
-        CellType type = fields[LEFT].getCell(row, col);
+        Field field = new Field(fields[LEFT]);
+
+        CellType type = field.getCell(row, col);
         CellType newType;
 
         if (type == CellType.EMPTY)
@@ -210,17 +351,23 @@ public class Model {
             newType = CellType.HIT;
 
         applyHit(LEFT, row, col, newType);
+        field.setCell(row, col, newType);
 
-        Field field = new Field(fields[LEFT]);
-        if (field.getCell(row, col) == CellType.HIT &&
-            checkDeadShip(row, col, field))
-            return CellType.SHIP;
+        if (newType == CellType.HIT && checkDeadShip(row, col, field)) {
+            if (checkVictory()) {
+                whoWon = RIGHT;
+                state = GameState.VICTORY;
+                return CellType.DEAD_WON;
+            }
+            return CellType.DEAD;
+        }
         return newType;
     }
 
     private void resetPrepare() {
-        state = State.PREPARE;
-        fields[LEFT].clear();
+        state = GameState.PREPARE;
+        arrangementError = true;
+        isUpdated = true;
     }
 
     private int doBfs(int row, int col, Field field) {
@@ -324,12 +471,6 @@ public class Model {
         return true;
     }
 
-    private int getOpponentPort(int myPort) {
-        if (myPort == DEFAULT_PORT)
-            return DEFAULT_PORT+1;
-        return DEFAULT_PORT;
-    }
-
     private String pack(int... integers) {
         String result = "";
         for (int i : integers)
@@ -337,8 +478,8 @@ public class Model {
         return result;
     }
 
-    private void send(String data, int port) throws Exception {
-        Socket clientSocket = new Socket("localhost", port);
+    private void send(String data, IpAddress addr) throws Exception {
+        Socket clientSocket = new Socket(addr.getHost(), addr.getPort());
         DataOutputStream out = new DataOutputStream(clientSocket.getOutputStream());
         out.writeBytes(data + '\n');
         clientSocket.close();
@@ -346,10 +487,11 @@ public class Model {
 
     private void sendCommon(String prefix, int... integers) {
         String data = prefix + pack(integers);
-        int port = getOpponentPort(thread.getPort());
         try {
-            send(data, port);
+            send(data, oppAddress);
         } catch (Exception ex) {
+            connectionError = true;
+            isUpdated = true;
             ex.printStackTrace();
         }
     }

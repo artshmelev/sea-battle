@@ -2,10 +2,12 @@ package model;
 
 public class Constants {
     public static final int SIZE = 10;
-    public static final int DEFAULT_PORT = 8765;
+    public static final int FIRST_PORT  = 8765;
+    public static final int SECOND_PORT = 8766;
 
     public static final int LEFT  = 0;
     public static final int RIGHT = 1;
+    public static final int NONE  = 2;
 
     public static final String REQUEST_PREFIX  = "req";
     public static final String RESPONSE_PREFIX = "res";

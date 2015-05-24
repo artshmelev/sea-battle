@@ -2,7 +2,9 @@ package model;
 import java.io.*;
 import java.net.*;
 
+import model.IpAddress;
 import model.Model;
+import model.GameState;
 import static model.Constants.*;
 
 public class TcpThread extends Thread {
@@ -32,8 +34,19 @@ public class TcpThread extends Thread {
                 String data = in.readLine();
 
                 Message msg = new Message(data);
-                if (msg.getPrefix().equals(REQUEST_PREFIX))
-                    model.setRequest(msg);
+                if (msg.getPrefix().equals(REQUEST_PREFIX)) {
+                    GameState state = model.getGameState();
+                    if (state == GameState.WAIT) {
+                        model.setOppAddress(new IpAddress(
+                            socket.getInetAddress().getHostAddress(),
+                            msg.getData()[0])
+                        );
+                    } else if (state == GameState.WAIT_READY ||
+                               state == GameState.PREPARE) {
+                        model.setOppReady(true);
+                    } else
+                        model.setRequest(msg);
+                }
                 else if (msg.getPrefix().equals(RESPONSE_PREFIX))
                     model.setResponse(msg);
             }

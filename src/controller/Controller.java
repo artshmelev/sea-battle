@@ -1,7 +1,7 @@
 package controller;
 
 import model.Model;
-import model.State;
+import model.GameState;
 
 public class Controller {
 
@@ -12,19 +12,31 @@ public class Controller {
     }
 
     public void handleStartEvent() {
-        model.update(State.PREPARE);
+        model.update(GameState.WAIT);
     }
 
     public void handleConnectEvent() {
-        model.update(State.CONNECT);
+        model.update(GameState.CONNECT);
     }
 
     public void handleReadyEvent() {
-        model.update(State.GAME);
+        model.waitOppReady();
+    }
+
+    public void handleDoConnectEvent(String address) {
+        model.doConnect(address);
     }
 
     public void handleHitEvent(int side, int row, int col) {
         model.tryHit(side, row, col);
+    }
+
+    public void handleLoadFileEvent(String path) {
+        model.loadArrangement(path);
+    }
+
+    public void handleSaveFileEvent(String path) {
+        model.saveArrangement(path);
     }
 
     public void handleQuitEvent() {
